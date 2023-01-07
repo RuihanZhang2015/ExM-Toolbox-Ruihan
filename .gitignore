@@ -1,0 +1,10 @@
+.ipynb_checkpoints
+exm.egg-info/
+exm/align/__pycache__
+Simple*
+*.pyc
+ruihan/*
+ruihan_november/*
+ruihan_september/*
+ruihan_october/*
+init/*
