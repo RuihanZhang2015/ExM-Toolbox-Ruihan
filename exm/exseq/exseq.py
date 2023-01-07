@@ -184,12 +184,16 @@ class ExSeq():
                             fix_vol = f['405'][:]
 
                         mov_vol = nd2ToVol(self.args.mov_path.format(code,'405',4), fov)
+                        z_nums = mov_vol.shape[0]
+
+                        fix_vol = fix_vol[300:600,:,:]
+                        mov_vol = mov_vol[300:600,:,:]
 
                         # lazy exception due to SITK failing sometimes
                         try:
-                        # if True:
                             tform = align.computeTransformMap(fix_vol, mov_vol)
                             result = align.warpVolume(mov_vol, tform)
+                            print(align.__dict__)
 
                             with h5py.File(self.args.h5_path.format(code,fov), 'w') as f:
                                 f.create_dataset('405', result.shape, dtype=result.dtype, data = result)
@@ -274,7 +278,6 @@ class ExSeq():
                         total_results = []
                         for channel_ind, channel in enumerate(self.args.channel_names[:-1]):
                             path = self.args.mov_path.format(code, channel, channel_ind)
-                            # print(path)
 
                             result = nd2ToVol(path, fov, channel)
                             total_results.append((channel,result))
@@ -290,14 +293,32 @@ class ExSeq():
                     else:
                         ### Other rounds
                         print("Code {} FOV {} Started on {}".format(code,fov,current_process().name))
-                        tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov))
+
+                        
 
                         total_results = []
-                        for channel_ind, channel in enumerate(self.args.channel_names[:-1]):
+                        for channel_ind, channel in enumerate(self.args.channel_names):
+                            if '405' not in channel:
+                                continue
                             path = self.args.mov_path.format(code, channel,channel_ind)
-                            # print(path)
 
                             vol = nd2ToVol(path, fov, channel)
+                            vol = vol[:200,:,:]
+
+                            with open(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov),'r') as f:
+                                lines = f.readlines()
+
+                            lines[0] = '(CenterOfRotationPoint 1664.00000 1664.00000 {0:0.6f})\n'.format(450*4/2) 
+
+                            lines[19] = '(Size 2048.000000 2048.000000 {})\n'.format(vol.shape[0])
+                            
+                            with open(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov),'w') as f:
+                                for line in lines:
+                                    f.writelines(line)
+                            print(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
+
+                            tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
+                            # print(tform)
 
                             result = align.warpVolume(vol, tform)
                             total_results.append((channel,result))
@@ -1068,7 +1089,8 @@ class ExSeq():
             
         with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,0), 'r+') as f:
                 fix_vol = f['405'][:,0,0]
-        z_inds = np.linspace(0, len(fix_vol)-1, num_layer)
+        # z_inds = np.linspace(0, len(fix_vol)-1, num_layer)
+        z_inds = np.linspace(0, 199, num_layer)
         z_inds = [int(x) for x in z_inds]
         
         def check_alignment_single(fov,code):

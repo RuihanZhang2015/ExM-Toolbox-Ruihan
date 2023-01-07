@@ -4,6 +4,7 @@ exm/align/__pycache__
 Simple*
 *.pyc
 ruihan/*
+*.log
 ruihan_november/*
 ruihan_september/*
 ruihan_october/*
