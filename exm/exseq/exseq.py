@@ -147,7 +147,7 @@ class ExSeq():
     #########################################################
     #########################################################
     ### ======== align 405 ==================================  
-    def transform_405_acceleration(self,fov_code_pairs,num_cpu=None):
+    def transform_405_acceleration(self,fov_code_pairs,num_cpu=None,modified= False):
         
         '''
         exseq.transform_405_acceleration(fov_code_pairs,num_cpu=2)
@@ -185,9 +185,10 @@ class ExSeq():
 
                         mov_vol = nd2ToVol(self.args.mov_path.format(code,'405',4), fov)
                         z_nums = mov_vol.shape[0]
-
-                        fix_vol = fix_vol[300:600,:,:]
-                        mov_vol = mov_vol[300:600,:,:]
+                        
+                        if modified:
+                            fix_vol = fix_vol[300:600,:,:]
+                            mov_vol = mov_vol[300:600,:,:]
 
                         # lazy exception due to SITK failing sometimes
                         try:
@@ -248,7 +249,7 @@ class ExSeq():
             f.write(f'Align405_other_round_time,{str(time.time()-start_time)} s\n')
    
     ### ======== align others ==============================
-    def transform_others_acceleration(self,fov_code_pairs,num_cpu):
+    def transform_others_acceleration(self,fov_code_pairs,num_cpu,modified = False):
         
         '''
         exseq.transform_others_acceleration(fov_code_pairs,num_cpu=5)
@@ -303,22 +304,24 @@ class ExSeq():
                             path = self.args.mov_path.format(code, channel,channel_ind)
 
                             vol = nd2ToVol(path, fov, channel)
-                            vol = vol[:200,:,:]
+                        
+                            tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov))
 
-                            with open(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov),'r') as f:
-                                lines = f.readlines()
+                            if modified:
+                                vol = vol[:200,:,:]
+                                with open(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov),'r') as f:
+                                    lines = f.readlines()
 
-                            lines[0] = '(CenterOfRotationPoint 1664.00000 1664.00000 {0:0.6f})\n'.format(450*4/2) 
-
-                            lines[19] = '(Size 2048.000000 2048.000000 {})\n'.format(vol.shape[0])
+                                lines[0] = '(CenterOfRotationPoint 1664.00000 1664.00000 {0:0.6f})\n'.format(450*4/2) 
+                                lines[19] = '(Size 2048.000000 2048.000000 {})\n'.format(vol.shape[0])
                             
-                            with open(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov),'w') as f:
-                                for line in lines:
-                                    f.writelines(line)
-                            print(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
+                                with open(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov),'w') as f:
+                                    for line in lines:
+                                        f.writelines(line)
+                                print(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
 
-                            tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
-                            # print(tform)
+                                tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
+                                # print(tform)
 
                             result = align.warpVolume(vol, tform)
                             total_results.append((channel,result))
