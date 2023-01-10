@@ -295,12 +295,10 @@ class ExSeq():
                         ### Other rounds
                         print("Code {} FOV {} Started on {}".format(code,fov,current_process().name))
 
-                        
-
                         total_results = []
-                        for channel_ind, channel in enumerate(self.args.channel_names):
-                            if '405' not in channel:
-                                continue
+                        for channel_ind, channel in enumerate(self.args.channel_names[:-1]):
+                            # if '405' not in channel:
+                            #     continue
                             path = self.args.mov_path.format(code, channel,channel_ind)
 
                             vol = nd2ToVol(path, fov, channel)
