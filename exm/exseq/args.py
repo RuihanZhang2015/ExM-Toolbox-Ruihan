@@ -1,39 +1,14 @@
-import plotly.express as px
-import matplotlib.pyplot as plt
-import seaborn as sns
-from ..config.utils import load_cfg
-from ..align.build import alignBuild
-from numbers_parser import Document
-from ..io.io import createFolderStruc
-from scipy.spatial.distance import cdist
-from ..io.io import nd2ToVol
 from nd2reader import ND2Reader
-import plotly.graph_objects as go
-import plotly.express as px
-import time
-import multiprocessing
-from multiprocessing import Process,Queue
-import collections
-import time
-
-import os
-os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
-
 import pandas as pd
 pd.set_option('display.expand_frame_repr', False)
-
-import h5py
-import pickle
-import cupy as cp
-import numpy as np
-from tqdm import tqdm
-from multiprocessing import current_process
-import queue # imported for using queue.Empty exception
-
+import seaborn as sns
+from numbers_parser import Document
+import collections
 
 class Args():
     
     def __init__(self,
+                project_path = '/mp/nas3/ruihan/20220916_zebrafish',
                 mov_path = '/mp/nas3/ruihan/20220916_zebrafish/code{}/Channel{} SD_Seq000{}.nd2',
                 layout_file = '/mp/nas3/ruihan/20220916_zebrafish/code0/out.csv',
                 out_path = '/mp/nas3/ruihan/20220916_zebrafish/',
@@ -44,19 +19,21 @@ class Args():
                 mapping = False,
                 fovs = None):
         
+        self.layout_file = project_path + 'code0/out.csv'
+        self.nd2_template = project_path + 'code{}/Channel{} SD_Seq000{}.nd2',
+
         self.ref_code = ref_code
+
         self.mov_path = mov_path
         self.fix_path = self.mov_path.format(self.ref_code,405,4)
         
         self.out_path = out_path
         self.out_dir = self.out_path + '/processed/'
-        self.h5_path = self.out_dir + '/code{}/{}.h5'
+        self.h5_path = self.out_dir + '/code{}/{}_transformed.h5'
         self.work_path = self.out_path + '/puncta/'
         
         self.layout_file = layout_file
-        
-#         self.ROI_min_default = [0,0,0]
-#         self.ROI_max_default = [ND2Reader(args.fix_path).metadata['z_levels'][-1]+1,2048,2048]
+
         
         if not fovs:
             self.fovs = list(ND2Reader(self.fix_path).metadata['fields_of_view'])

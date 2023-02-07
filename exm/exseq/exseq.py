@@ -5,14 +5,12 @@ from ..config.utils import load_cfg
 from ..align.build import alignBuild
 from numbers_parser import Document
 from ..io.io import createFolderStruc
-from scipy.spatial.distance import cdist
 from ..io.io import nd2ToVol
 from nd2reader import ND2Reader
 import plotly.graph_objects as go
 import plotly.express as px
 import time
-import multiprocessing
-from multiprocessing import Process,Queue
+from exm.exseq.inspect import inspect_raw_plotly,inspect_raw_matplotlib
 import collections
 import time
 
@@ -27,8 +25,7 @@ import pickle
 import cupy as cp
 import numpy as np
 from tqdm import tqdm
-from multiprocessing import current_process
-import queue # imported for using queue.Empty exception
+
 
     
 class ExSeq():
@@ -61,707 +58,79 @@ class ExSeq():
             if not os.path.exists(self.args.out_dir + 'code{}/tforms/'.format(code)):
                 os.makedirs(self.args.out_dir + 'code{}/tforms/'.format(code))
             
-        os.system('chmod -R 777 {}'.format(self.args.work_path))
-        
-        os.system('chmod -R 777 {}'.format(self.args.out_path))
-            
+        try:
+            os.system('chmod -R 777 {}  >/dev/null 2>&1'.format(self.args.work_path))
+            os.system('chmod -R 777 {}  >/dev/null 2>&1'.format(self.args.out_path))
+        except:
+            pass
        
-    ################ Retrieve ###############################
-    #########################################################
+    ### =============== Retrieve =====================
     def retrieve_img(self,fov,code,c,ROI_min,ROI_max):
-        with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-            im = f[self.args.channel_names[c]][ROI_min[0],max(0,ROI_min[1]):min(2048,ROI_max[1]),max(0,ROI_min[2]):min(2048,ROI_max[2])]
-            im = np.squeeze(im)
-        return im
+        from exm.exseq.retrieve import retrieve_img
+        return retrieve_img(self,fov,code,c,ROI_min,ROI_max)
     
     def retrieve_vol(self,fov,code,c,ROI_min,ROI_max):
-        '''
-        exseq.retrieve_vol(fov,code,c,ROI_min,ROI_max)
-        '''
-        with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-            vol = f[self.args.channel_names[c]][max(0,ROI_min[0]):ROI_max[0],max(0,ROI_min[1]):min(2048,ROI_max[1]),max(0,ROI_min[2]):min(2048,ROI_max[2])]    
-        return vol
-    
+        from exm.exseq.retrieve import retrieve_vol
+        return retrieve_vol(self,fov,code,c,ROI_min,ROI_max)
+
     def retrieve_result(self,fov):
-        with open(self.args.work_path + '/fov{}/result.pkl'.format(fov), 'rb') as f:
-            return pickle.load(f)
+        from exm.exseq.retrieve import retrieve_result
+        return retrieve_result(self,fov)
     
     def retrieve_puncta(self,fov,puncta_index):
-        return self.retrieve_result(fov)[puncta_index]
+        from exm.exseq.retrieve import retrieve_puncta
+        return retrieve_puncta(self,fov,puncta_index)
     
     def retrieve_complete(self,fov):
-        with open(self.args.work_path+'/fov{}/complete.pkl'.format(fov),'rb') as f:
-            return pickle.load(f)
+        from exm.exseq.retrieve import retrieve_complete
+        return retrieve_complete(self,fov)
         
     def retrieve_coordinate(self):
-        with open(self.args.layout_file,encoding='utf-16') as f:
-            contents = f.read()
-
-        contents = contents.split('\n')
-        contents = [line for line in contents if line and line[0] == '#' and 'SD' not in line]
-        contents = [line.split('\t')[1:3] for line in contents]
-
-        coordinate = [[float(x) for x in line] for line in contents ]
-        coordinate = np.asarray(coordinate)
-
-        print('oooold',coordinate[:10])
-
-        coordinate[:,0] = max(coordinate[:,0]) - coordinate[:,0]
-        coordinate[:,1] -= min(coordinate[:,1])
-        coordinate = np.asarray(coordinate/0.1625)
-        return coordinate
-
+        from exm.exseq.retrieve import retrieve_coordinate
+        return retrieve_coordinate(self)
+        
     def retrieve_coordinate2(self):
-
-        import xml.etree.ElementTree 
-        def get_offsets(filename= "/mp/nas3/fixstars/yves/zebrafish_data/20221025/code2/stitched_raw_small.xml"):
-            tree = xml.etree.ElementTree.parse(filename)
-            root = tree.getroot()
-            vtrans = list()
-            for registration_tag in root.findall('./ViewRegistrations/ViewRegistration'):
-                tot_mat = np.eye(4, 4)
-                for view_transform in registration_tag.findall('ViewTransform'):
-                    affine_transform = view_transform.find('affine')
-                    mat = np.array([float(a) for a in affine_transform.text.split(" ")] + [0, 0, 0, 1]).reshape((4, 4))
-                    tot_mat = np.matmul(tot_mat, mat)
-                vtrans.append(tot_mat)
-            def transform_to_translate(m):
-                m[0, :] = m[0, :] / m[0][0]
-                m[1, :] = m[1, :] / m[1][1]
-                m[2, :] = m[2, :] / m[2][2]
-                return m[:-1, -1]
-
-            trans = [transform_to_translate(vt).astype(np.int64) for vt in vtrans]
-            return np.stack(trans)
-
-        coordinate = get_offsets()
-        coordinate = np.asarray(coordinate)
-
-        coordinate[:,0] = max(coordinate[:,0]) - coordinate[:,0]
-        coordinate[:,1] -= min(coordinate[:,1])
-        coordinate[:,2] -= min(coordinate[:,2])
-        # coordinate[:,:2] = np.asarray(coordinate[:,:2]/0.1625)
-        # coordinate[:,2] = np.asarray(coordinate[:,2]/0.4)
-        return coordinate
-
-    #########################################################
-    #########################################################
-    ### ======== align 405 ==================================  
-    def transform_405_acceleration(self,fov_code_pairs,num_cpu=None,modified= False):
-        
-        '''
-        exseq.transform_405_acceleration(fov_code_pairs,num_cpu=2)
-        '''
-        
-        def align405_single_acceleration(tasks_queue,q_lock):
+        from exm.exseq.retrieve import retrieve_coordinate2
+        return retrieve_coordinate2(self)
+       
     
-            while True: # Check for remaining task in the Queue
-
-                try:
-                    with q_lock:
-                        fov,code = tasks_queue.get_nowait()
-                        print('Remaining tasks to process : {}'.format(tasks_queue.qsize()))
-                except queue.Empty:
-                    print("No task left for "+ current_process().name)
-                    break
-
-                else:
-
-                    if code == self.args.ref_code:
-
-                        fix_vol = nd2ToVol(self.args.fix_path, fov)
-                        with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'w') as f:
-                            f.create_dataset('405', fix_vol.shape, compression="gzip", dtype=fix_vol.dtype, data = fix_vol)
-
-                    else:
-
-                        print("Code {} FOV {} Started on {}".format(code,fov,current_process().name))
-                        cfg = load_cfg()
-                        align = alignBuild(cfg)
-                        align.buildSitkTile()
-
-                        with h5py.File(self.args.h5_path.format(self.args.ref_code,fov), 'r+') as f:
-                            fix_vol = f['405'][:]
-
-                        mov_vol = nd2ToVol(self.args.mov_path.format(code,'405',4), fov)
-                        z_nums = mov_vol.shape[0]
-                        
-                        if modified:
-                            fix_vol = fix_vol[300:600,:,:]
-                            mov_vol = mov_vol[300:600,:,:]
-
-                        # lazy exception due to SITK failing sometimes
-                        try:
-                            tform = align.computeTransformMap(fix_vol, mov_vol)
-                            result = align.warpVolume(mov_vol, tform)
-                            print(align.__dict__)
-
-                            with h5py.File(self.args.h5_path.format(code,fov), 'w') as f:
-                                f.create_dataset('405', result.shape, dtype=result.dtype, data = result)
-
-                            align.writeTransformMap(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov), tform)
-
-                            print("Code {} FOV {} on {} Done".format(code,fov,current_process().name))    
-
-                        except Exception as e:
-                            print(e)
-                            # write code, fov to .txt file if it doesn't work
-                            with open(self.args.out_dir + '/failed.txt','a') as f:
-                                f.write(f'code{code},fov{fov}\n')
-                            print('code{},fov{} failed'.format(code,fov))
-
-                    os.system('chmod -R 777 {}'.format(self.args.out_path))
-
-        os.environ["OMP_NUM_THREADS"] = "1"
-
-
-        # Use a quarter of the available CPU resources to finish the tasks; you can increase this if the server is accessible for this task only.
-        if num_cpu == None:
-            cpu_execution_core = multiprocessing.cpu_count() / 4
-        else:
-            cpu_execution_core = num_cpu
-        # List to hold the child processes.
-        child_processes = [] 
-        # Queue to hold all the puncta extraction tasks.
-        tasks_queue = Queue() 
-        # Queue lock to avoid race condition.
-        q_lock = multiprocessing.Lock()
-        # Get the extraction tasks starting time. 
+    ### =============== Align =====================
+    def transform_405_lowres(self,fov_code_pairs):
+        from exm.exseq.align2 import transform_405_lowres
+        transform_405_lowres(self,fov_code_pairs)
         
-        start_time = time.time()
-        
-        # # Clear the child processes list.
-        child_processes = [] 
+    def transform_405_highres(self,fov_code_pairs):
+        from exm.exseq.align2 import transform_405_highres
+        transform_405_highres(self,fov_code_pairs)
 
-        # Add all the align405 to the queue.
-        for fov,code in fov_code_pairs:
-            tasks_queue.put((fov,code))
+    def transform_others_highres(self,fov_code_pairs):
+        from exm.exseq.align2 import transform_others_highres
+        transform_others_highres(self,fov_code_pairs)
 
-        for w in range(int(cpu_execution_core)):
-            p = Process(target=align405_single_acceleration, args=(tasks_queue,q_lock))
-            child_processes.append(p)
-            p.start()
+    def inspect_alignment(self,fov_code_pairs,temp_dir):
+        from exm.exseq.align2 import inspect_alignment
+        inspect_alignment(self,fov_code_pairs,temp_dir)
 
-        for p in child_processes:
-            p.join()
 
-        with open(self.args.out_dir + '/process_time.txt','a') as f:
-            f.write(f'Align405_other_round_time,{str(time.time()-start_time)} s\n')
-   
-    ### ======== align others ==============================
-    def transform_others_acceleration(self,fov_code_pairs,num_cpu,modified = False):
-        
-        '''
-        exseq.transform_others_acceleration(fov_code_pairs,num_cpu=5)
-        '''
-        
-        
-        def transform_others_single_acceleration(tasks_queue,q_lock):
-    
-            while True: # Check for remaining task in the Queue
-                try:
-                    with q_lock:
-                        fov,code = tasks_queue.get_nowait()
-                        print('Remaining tasks to process : {}'.format(tasks_queue.qsize()))
-                except  queue.Empty:
-                    print("No task left for "+ current_process().name)
-                    break
-
-                else:
-                    cfg = load_cfg()
-                    align = alignBuild(cfg)
-                    align.buildSitkTile()
-
-                    ### Reference round
-                    if code == self.args.ref_code:
-                        
-                        print("Code {} FOV {} Started on {}".format(self.args.ref_code,fov,current_process().name))
-                        total_results = []
-                        for channel_ind, channel in enumerate(self.args.channel_names[:-1]):
-                            path = self.args.mov_path.format(code, channel, channel_ind)
-
-                            result = nd2ToVol(path, fov, channel)
-                            total_results.append((channel,result))
-
-                        with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code, fov), 'r+') as f:
-                            for ch_results in total_results:
-                                if ch_results[0] in f.keys():
-                                    del f[ch_results[0]]
-                                f.create_dataset(ch_results[0], ch_results[1].shape, dtype=ch_results[1].dtype, data = ch_results[1])
-
-                        print("Code {} FOV {} on {} Done".format(self.args.ref_code,fov,current_process().name))
-
-                    else:
-                        ### Other rounds
-                        print("Code {} FOV {} Started on {}".format(code,fov,current_process().name))
-
-                        total_results = []
-                        for channel_ind, channel in enumerate(self.args.channel_names[:-1]):
-                            # if '405' not in channel:
-                            #     continue
-                            path = self.args.mov_path.format(code, channel,channel_ind)
-
-                            vol = nd2ToVol(path, fov, channel)
-                        
-                            tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov))
-
-                            if modified:
-                                vol = vol[:200,:,:]
-                                with open(self.args.out_dir + 'code{}/tforms/{}.txt'.format(code,fov),'r') as f:
-                                    lines = f.readlines()
-
-                                lines[0] = '(CenterOfRotationPoint 1664.00000 1664.00000 {0:0.6f})\n'.format(450*4/2) 
-                                lines[19] = '(Size 2048.000000 2048.000000 {})\n'.format(vol.shape[0])
-                            
-                                with open(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov),'w') as f:
-                                    for line in lines:
-                                        f.writelines(line)
-                                print(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
-
-                                tform = align.readTransformMap(self.args.out_dir + 'code{}/tforms/{}_hijack.txt'.format(code,fov))
-                                # print(tform)
-
-                            result = align.warpVolume(vol, tform)
-                            total_results.append((channel,result))
-
-                        with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code, fov), 'r+') as f:
-                            for ch_results in total_results:    
-                                if ch_results[0] in f.keys():
-                                    del f[ch_results[0]]
-                                f.create_dataset(ch_results[0], ch_results[1].shape, dtype=ch_results[1].dtype, data = ch_results[1])
-
-                        print("Code {} FOV {} on {} Done".format(code,fov,current_process().name))
-
-                        os.system('chmod -R 777 {}'.format(self.args.out_path))
-        
-        os.environ["OMP_NUM_THREADS"] =  "1"
-
-        # Use a quarter of the available CPU resources to finish the tasks; you can increase this if the server is accessible for this task only.
-        if num_cpu == None:
-            cpu_execution_core = multiprocessing.cpu_count() / 4
-        else:
-            cpu_execution_core = num_cpu
-        # List to hold the child processes.
-        child_processes = [] 
-        # Queue to hold all the puncta extraction tasks.
-        tasks_queue = Queue() 
-        # Queue lock to avoid race condition.
-        q_lock = multiprocessing.Lock()
-        # Get the extraction tasks starting time. 
-        
-        start_time = time.time()
-        # Clear the child processes list.
-        child_processes = [] 
-        # Add all the transform_other_channels to the queue.
-        for fov,code in fov_code_pairs:
-            tasks_queue.put((fov,code))
-
-        for w in range(int(cpu_execution_core)):
-                p = Process(target=transform_others_single_acceleration, args=(tasks_queue,q_lock))
-                child_processes.append(p)
-                p.start()
-
-        for p in child_processes:
-            p.join()
-
-        with open(self.args.out_dir + '/process_time.txt','a') as f:
-            f.write(f'other_code_transform_other_channels_time,{str(time.time()-start_time)} s\n')
-     
-
-    #########################################################
-    #########################################################        
-    ### =============== Consolidate Channels =====================
-    def consolidate_channels_function(self,fov,code):
-
-        def find_matching_points(point_cloud1,point_cloud2,distance_threshold=8):
-
-            temp1 = np.copy(point_cloud1)
-            temp1[:,0] = temp1[:,0] * 0.5
-            temp2 = np.copy(point_cloud2)
-            temp2[:,0] = temp2[:,0] * 0.5
-
-            distance = cdist(temp1, temp2, 'euclidean')
-            index1 = np.argmin(distance, axis = 1)
-            index2 = np.argmin(distance, axis = 0)
-
-            valid = [i for i,x in enumerate(index1) if index2[x] == i]
-
-            pairs = [{'point0':i,'point1':index1[i]} for i in valid 
-                        if (distance[i,index1[i]] < distance_threshold)]
-
-            return pairs
-
-        print('Consolidate channels fov={},code={}'.format(fov,code))
-        with open(self.args.work_path + '/fov{}/coords_total_code{}.pkl'.format(fov,code), 'rb') as f:
-            coords_total = pickle.load(f)
-
-        ### 640
-        reference = [{'position':position,'c0':{'index':i,'position':position}} for i, position in enumerate(coords_total['c0']) ]
-
-        ### Other channels
-        for c in [1,2,3]:
-
-            point_cloud1 = np.asarray([x['position'] for x in reference])
-            point_cloud2 = np.asarray(coords_total['c{}'.format(c)])
-            pairs = find_matching_points(point_cloud1,point_cloud2)
-
-            for pair in pairs:
-                reference[pair['point0']]['c{}'.format(c)] = {
-                                'index': pair['point1'],
-                                'position': point_cloud2[pair['point1']]
-                            }
-
-            others = set(range(len(point_cloud2)))-set([ pair['point1'] for pair in pairs ])
-            for other in others:
-                reference.append({
-                            'position':point_cloud2[other],
-                            'c{}'.format(c) :{
-                                'index': other,
-                                'position': point_cloud2[other]
-                            }
-                        })
-
-        with h5py.File( self.args.h5_path.format(code,fov), 'r') as f:
-            for i, duplet in enumerate(reference):
-                temp = [ f[ self.args.channel_names[c] ][tuple(duplet['c{}'.format(c)]['position'])] if 'c{}'.format(c) in duplet else 0 for c in range(4) ]            
-                        
-                duplet['color'] = np.argmax(temp)
-                duplet['intensity'] = temp
-                duplet['index'] = i
-                duplet['position'] = duplet['c{}'.format(duplet['color'])]['position']
-                            
-        with open(self.args.work_path +'/fov{}/result_code{}.pkl'.format(fov,code), 'wb') as f:
-            pickle.dump(reference,f)
-     
-    def consolidate_channels(self,fov_code_pairs):
-
-        '''
-        exseq.consolidate_channels(
-                    fov_code_pairs = [[30,0],[20,2]]
-                    )
-        '''
-                
-        def f(tasks_queue,q_lock):
-    
-            while True: # Check for remaining task in the Queue
-                try:
-                    with q_lock:
-                        fov,code = tasks_queue.get_nowait()
-                        print('Remaining tasks to process : {}'.format(tasks_queue.qsize()))
-                except queue.Empty:
-                    print("No task left for "+ current_process().name)
-                    break
-                else:
-                    self.consolidate_channels_function(fov,code)
-                    print('finish fov{},code{}'.format(fov,code))        
-                
-                
-        os.environ["OMP_NUM_THREADS"] =  "1"
-
-        # Use a quarter of the available CPU resources to finish the tasks; you can increase this if the server is accessible for this task only.
-        cpu_execution_core = 20 #multiprocessing.cpu_count() / 4
-
-        # List to hold the child processes.
-        child_processes = []
-    
-        # Queue to hold all the puncta extraction tasks.
-        tasks_queue = Queue() 
-    
-        # Queue lock to avoid race condition.
-        q_lock = multiprocessing.Lock()
-    
-        # Get the extraction tasks starting time. 
-        start_time = time.time()
-    
-        # Clear the child processes list.
-        child_processes = [] 
-    
-        # Add all the transform_other_channels to the queue.
-        for fov,code in fov_code_pairs:
-            tasks_queue.put((fov,code))
-
-        for w in range(int(cpu_execution_core)):
-            p = Process(target=f, args=(tasks_queue,q_lock))
-            child_processes.append(p)
-            p.start()
-
-        for p in child_processes:
-            p.join()
-    
+    ### =============== Consolidate =====================
     def extract(self,fov_code_pairs,use_gpu=False,num_gpu = 3,num_cpu = 3,chunk_size=100):
-        
-        '''
-        exseq.extract(
-            fov_code_pairs = [[30,0],[20,3]]
-            )
-        '''
-        ### ============= Extraction Per Channel =================
-        def puncta_extraction_gpu(tasks_queue, num_gpu, chunk_size):
-            
-            from cupyx.scipy.ndimage import gaussian_filter
-            from cucim.skimage.feature import peak_local_max
+        from exm.exseq.extract import extract
+        return extract(self,fov_code_pairs,use_gpu,num_gpu,num_cpu,chunk_size)
+       
+    def consolidate_channels_function(self,fov,code):
+        from exm.exseq.consolidate import consolidate_channels_function
+        consolidate_channels_function(self,fov,code)
 
-            def calculate_coords_total_gpu(tasks_queue,device,lock,queue_lock,chunk_size):
+    def consolidate_channels(self,fov_code_pairs):
+        from exm.exseq.consolidate import consolidate_channels
+        consolidate_channels(self,fov_code_pairs)
 
-                with cp.cuda.Device(device):
-
-                    while True: # Check for remaining task in the Queue
-
-                        try:
-                            with queue_lock:
-                                temp_args = tasks_queue.get_nowait()
-                                print('Remaining tasks to process : {}\n'.format(tasks_queue.qsize()))
-                        except  queue.Empty:
-                            print("No task left for {}\n".format(current_process().name))
-                            break
-                        else:
-                            fov,code = temp_args
-                            print('=======Starting Fov:{}, Code:{} on {}\n'.format(fov,code,current_process().name))   
-
-                            coords_total = dict()
-
-                            with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-                                num_z = len(f[self.args.channel_names[0]][:,0,0])
-
-                            for c in range(4):
-
-                                for chunk in range((num_z//chunk_size)+1):
-
-                                    with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-                                        img = f[self.args.channel_names[c]][max(chunk_size*chunk-7,0):min(chunk_size*(chunk+1)+7,num_z),:,:]
-                                        f.close()
-
-                                    with lock:
-                                        img = cp.array(img)
-                                        gaussian_filter(img, 1, output=img, mode='reflect', cval=0)
-                                        coords = np.array(peak_local_max(img, min_distance = 7, threshold_abs=self.args.thresholds[c],exclude_border=False).get())
-
-                                        #offset the z-axis between chunks
-                                        coords[:,0] += max(chunk_size*chunk-7,0)
-                                    
-                                        # concat puncta in each chunk
-                                        if chunk == 0:
-                                            coords_total['c{}'.format(c)] = coords
-                                        else:     
-                                            coords_total['c{}'.format(c)] = np.concatenate((coords_total['c{}'.format(c)],coords),axis=0)
-
-                                        del img
-                                        del coords
-                                        cp.get_default_memory_pool().free_all_blocks()
-                                        cp.get_default_pinned_memory_pool().free_all_blocks()
-
-
-                            # Remove duplicated puncta resulted from in the mautal regions between chunks. 
-                            for c in range(4):
-                                coords_total['c{}'.format(c)] = np.unique(coords_total['c{}'.format(c)], axis=0)
-
-                            with open(self.args.work_path + '/fov{}/coords_total_code{}.pkl'.format(fov,code), 'wb') as f:
-                                pickle.dump(coords_total,f)
-                                f.close()
-
-                            print('------ Fov:{}, Code:{} Finished on {}\n'.format(fov,code,current_process().name))
-
-            # List to hold the child processes.
-            child_processes = [] 
-
-            # Get the extraction tasks starting time. 
-            start_time = time.time()
-
-            # Queue locks to avoid race condition.
-            q_lock = multiprocessing.Lock()
-
-            print('Total tasks to process : {}'.format(tasks_queue.qsize()))
-
-            # Excute the extraction tasks on GPU
-            gpu_locks=[]
-            for gpu in range(num_gpu):
-                lock = multiprocessing.Lock()
-                gpu_locks.append((gpu,lock))
-
-            # Create and start a parallel execution processes based on the number of GPUs and 'process_per_gpu'. 
-            process_per_gpu = 1
-            for gpu_device in gpu_locks:
-                for cpu_cores in range(process_per_gpu):
-                    p = Process(target=calculate_coords_total_gpu, args=(tasks_queue,int(gpu_device[0]),gpu_device[1],q_lock,chunk_size))
-                    child_processes.append(p)
-                    p.start()
-
-            # End all the execution child processes.
-            for p in child_processes:
-                p.join()
-
-            ## Show the total execution time.  
-            print("total_processing_time",time.time()-start_time,"s")
-
-
-        def puncta_extraction_cpu(tasks_queue,num_cpu,chunk_size):
-
-            def calculate_coords_total(tasks_queue,queue_lock,chunk_size):
-
-                from scipy.ndimage import gaussian_filter
-                from skimage.feature import peak_local_max
-
-                while True: # Check for remaining task in the Queues
-                    try:
-                        with queue_lock:
-                            temp_args = tasks_queue.get_nowait()
-                            print('Remaining tasks to process : {}'.format(tasks_queue.qsize()))
-                    except  queue.Empty:
-                        print("No task left for "+ current_process().name)
-                        break
-
-                    else:
-
-                        fov,code = temp_args
-                        print('Starting Fov:{}, Code:{} on '.format(fov,code),current_process().name) 
-                        
-                        coords_total = collections.defaultdict(list)
-
-                        with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-                            num_z = len(f[self.args.channel_names[0]][:,0,0])
-
-                        for c in range(4):
-
-                            for chunk in range((num_z//chunk_size)+1):
-
-                                with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-                                    img = f[self.args.channel_names[c]][max(chunk_size*chunk-7,0):min(chunk_size*(chunk+1)+7,num_z),:,:]
-                                    f.close()
-
-                                gaussian_filter(img, 1, output=img, mode='reflect', cval=0)
-                                coords = peak_local_max(img, min_distance = 7, threshold_abs=self.args.thresholds[c],exclude_border=False)
-
-                                #offset the z-axis between chunks
-                                coords[:,0] += max(chunk_size*chunk-7,0)
-
-                                # concat puncta in each chunk
-                                if chunk == 0 or len(coords_total['c{}'.format(c)])==0:
-                                    coords_total['c{}'.format(c)] = coords
-                                else:     
-                                    coords_total['c{}'.format(c)] = np.concatenate((coords_total['c{}'.format(c)],coords),axis=0)
-
-                        # Remove duplicated puncta resulted from the mutual regions between chunks.
-                        for c in range(4):
-                            coords_total['c{}'.format(c)] = np.unique(coords_total['c{}'.format(c)], axis=0)
-
-                        with open(self.args.work_path + '/fov{}/coords_total_code{}.pkl'.format(fov,code), 'wb') as f:
-                            print('yes')
-                            pickle.dump(coords_total,f)
-                            f.close()
-
-                        print('Fov:{}, Code:{} Finished on'.format(fov,code),current_process().name)
-
-            # List to hold the child processes.
-            child_processes = [] 
-
-            # Get the extraction tasks starting time. 
-            start_time = time.time()
-
-            # Queue locks to avoid race condition.
-            q_lock = multiprocessing.Lock()
-
-            print('Total tasks to process : {}'.format(tasks_queue.qsize()))
-            # Execute the extraction tasks on the CPU only.
-            # Create and start a parallel execution processes based on the number of 'cpu_execution_core'. 
-            for w in range(int(num_cpu)):
-                p = Process(target=calculate_coords_total, args=(tasks_queue,q_lock,chunk_size))
-                child_processes.append(p)
-                p.start()
-
-            # End all the execution child processes.
-            for p in child_processes:
-                p.join()
-
-            ## Show the total execution time.  
-            print("total_processing_time",time.time()-start_time,"s")
-            
-        
-        ################ main ############################
-        # Queue to hold all the puncta extraction tasks.
-        tasks_queue = Queue() 
-        # Add all the extraction tasks to the queue.
-        for fov,code in fov_code_pairs:
-            tasks_queue.put((fov,code))
-        
-        if use_gpu:
-            processing_device = 'GPU'
-            puncta_extraction_gpu(tasks_queue,num_gpu,chunk_size)
-        else:
-            processing_device = 'CPU'
-            puncta_extraction_cpu(tasks_queue,num_cpu,chunk_size)
-        
-        self.consolidate_channels(fov_code_pairs)
-    
-    ### ================== Consolidate Codes ===================
     def consolidate_codes(self,fovs,codes=range(7)):
-        
-        '''
-        exseq.consolidate_code(
-                fovs = [1,2,3]
-                ,codes = [0,1,4,5]
-                )
-        '''
-        def consolidate_codes_function(fov,codes):
-
-            def find_matching_points(point_cloud1,point_cloud2,distance_threshold=14):
-
-                temp1 = np.copy(point_cloud1)
-                temp1[:,0] = temp1[:,0] * 0.5
-                temp2 = np.copy(point_cloud2)
-                temp2[:,0] = temp2[:,0] * 0.5
-
-                distance = cdist(temp1, temp2, 'euclidean')
-                index1 = np.argmin(distance, axis = 1)
-                index2 = np.argmin(distance, axis = 0)
-
-                valid = [i for i,x in enumerate(index1) if index2[x] == i]
-
-                pairs = [{'point0':i,'point1':index1[i]} for i in valid if distance[i,index1[i]] < distance_threshold]
-
-                return pairs
-
-            code = 0
-            with open(self.args.work_path + '/fov{}/result_code{}.pkl'.format(fov,code), 'rb') as f:
-                new = pickle.load(f)
-
-            reference = [ { 'position': x['position'], 'code0':x } for x in new ] 
-
-            for code in set(codes)-set([0]):
-
-                with open(self.args.work_path + '/fov{}/result_code{}.pkl'.format(fov,code), 'rb') as f:
-                    new = pickle.load(f)
-
-                point_cloud1 = np.asarray([x['position'] for x in reference])
-                point_cloud2 = np.asarray([x['position'] for x in new])
-
-                pairs = find_matching_points(point_cloud1,point_cloud2)
-
-                for pair in pairs:
-                    reference[pair['point0']]['code{}'.format(code)] = new[pair['point1']]
-
-                others = set(range(len(point_cloud2)))-set([ pair['point1'] for pair in pairs ])
-                for other in others:
-                    reference.append({
-                        'position':point_cloud2[other],
-                        'code{}'.format(code) : new[other]
-                    })
-
-            reference = [ {**x,'index':i} for i,x in enumerate(reference) ]
-            
-            reference = [ {**x, 'barcode': ''.join([str(x['code{}'.format(code)]['color']) if 'code{}'.format(code) in x else '_' for code in self.args.codes ]) } for x in reference ]
-
-            with open(self.args.work_path + '/fov{}/result.pkl'.format(fov), 'wb') as f:
-                pickle.dump(reference,f)
-
-        for fov in fovs:
-            print('Time{} Consolidate Code fov={}'.format(time.time(),fov))
-            consolidate_codes_function(fov,codes)
-            
+        from exm.exseq.consolidate import consolidate_codes
+        consolidate_codes(self,fovs,codes=range(7))
     
-            
-    #########################################################
-    ######################################################### 
-    ### =============== Prior information Puncta Extraction =====================
+
+    ### =============== Prior information Puncta Extraction ==========
     def prior_info_puncta_function(self,tasks_queue,lock_q,num_missed_round,ROI_size,threshold_fraction):
         
         from scipy.ndimage import gaussian_filter
@@ -960,8 +329,6 @@ class ExSeq():
         print("find_local_puncta_time",time.time()-start_time,"s") 
     
     
-    #########################################################
-    #########################################################
     ### ================= Sanity check ====================
     def visualize_progress(self):
         
@@ -999,6 +366,7 @@ class ExSeq():
         plt.show()
         print('1: 405 done, 2: all channels done, 3:puncta extracted 4:channel consolidated')
         
+
     ### =============== In_Region =======================
     def in_region(self,coord,ROI_min,ROI_max):
         
@@ -1014,11 +382,8 @@ class ExSeq():
             return False
     
   
-    
-    #########################################################
-    #########################################################
     ### =============== Check alignment==================
-    def inspect_alignment_singleFovCode(self, fov, code, ROI_min=[0,0,0], ROI_max= None,num_layer = 4):
+    def inspect_alignment_singleFovCode(self, fov, code, ROI_min=[0,0,0], ROI_max= None,num_layer = 4,modified = False):
         
         '''
         exseq.check_alignment(
@@ -1031,22 +396,22 @@ class ExSeq():
                 )
         '''
 
-        if ROI_max == None:
-            with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'r+') as f:
-                fix_vol = f['405'][:,0,0]
-                ROI_max = [len(fix_vol),2048,2048]
+        if modified:
+            if ROI_max == None:
+                with h5py.File(self.args.out_dir + 'code{}/{}_downsampled.h5'.format(self.args.ref_code,fov), 'r+') as f:
+                    fix_vol = f['405'][:,0,0]
+                    ROI_max = [len(fix_vol),1024,1024]
             
-        z_inds = np.linspace(ROI_min[0], ROI_max[0]-1, num_layer)
-        z_inds = [int(x) for x in z_inds]
-        
-        if ROI_max == None:
+            z_inds = np.linspace(ROI_min[0], ROI_max[0]-1, num_layer)
+            z_inds = [int(x) for x in z_inds]
             
-            fig, ax = plt.subplots(len(z_inds), 2, figsize = (10, 5*len(z_inds)))
+            
+            fig, ax = plt.subplots(len(z_inds), 4, figsize = (20, 5*len(z_inds)))
 
-            with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'r+') as f:
+            with h5py.File(self.args.out_dir + 'code{}/{}_downsampled.h5'.format(self.args.ref_code,fov), 'r+') as f:
                 fix_vol = f['405']
 
-                with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code,fov), 'r+') as f:
+                with h5py.File(self.args.out_dir + 'code{}/{}_downsampled.h5'.format(code,fov), 'r+') as f:
                     mov_vol = f['405']
 
                     for row, z in enumerate(z_inds):
@@ -1055,7 +420,20 @@ class ExSeq():
                         ax[row,1].imshow(mov_vol[z,:,:])
                         ax[row,1].set_title('code{} z = {}'.format(code,z))
 
+                        ax[row,2].imshow(fix_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
+                        ax[row,2].set_title('code0 z = {}'.format(z))
+                        ax[row,3].imshow(mov_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
+                        ax[row,3].set_title('code{} z = {}'.format(code,z))
+
         else:
+            if ROI_max == None:
+                with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'r+') as f:
+                    fix_vol = f['405'][:,0,0]
+                    ROI_max = [len(fix_vol),2048,2048]
+            
+            z_inds = np.linspace(ROI_min[0], ROI_max[0]-1, num_layer)
+            z_inds = [int(x) for x in z_inds]
+            
             
             fig, ax = plt.subplots(len(z_inds), 4, figsize = (20, 5*len(z_inds)))
 
@@ -1075,7 +453,7 @@ class ExSeq():
                         ax[row,2].set_title('code0 z = {}'.format(z))
                         ax[row,3].imshow(mov_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
                         ax[row,3].set_title('code{} z = {}'.format(code,z))
-            
+                
         plt.show()
     
     def inspect_alignment_multiFovCode(self, fov_code_pairs, num_layer=4):
@@ -1090,6 +468,7 @@ class ExSeq():
             
         with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,0), 'r+') as f:
                 fix_vol = f['405'][:,0,0]
+
         # z_inds = np.linspace(0, len(fix_vol)-1, num_layer)
         z_inds = np.linspace(0, 199, num_layer)
         z_inds = [int(x) for x in z_inds]
@@ -1115,11 +494,11 @@ class ExSeq():
         for fov, code in tqdm(fov_code_pairs):
             check_alignment_single(fov,code)
             
-    ### ================== Inspect Raw images =================
-    def inspect_stitching(self):
 
-        def show_fov(fov,code,z):
-            code = 0
+    ### ================== Inspect Raw images =================
+    def inspect_stitching(self,code,z):
+
+        def show_fov(fov,code=0,z=0):
             
             with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
                 img = f[self.args.channel_names[4]][z,:,:]
@@ -1128,20 +507,22 @@ class ExSeq():
             plt.imshow(img,cmap=plt.get_cmap('gray'),vmax = 600)
             plt.text(0,0,'fov{}'.format(fov),fontsize = 100)
             plt.tight_layout()
-            fig.savefig(self.args.work_path + 'max_projection/fov_{}_405.png'.format(fov))
+            fig.savefig(self.args.work_path + 'max_projection/fov_{}_405_z={}.png'.format(fov,z))
             plt.close(fig)
 
         if not os.path.exists(self.args.work_path + 'max_projection/'):
             os.makedirs(self.args.work_path + 'max_projection/')
 
         # ------Get coordinates-----
-        coordinate = pd.read_csv(self.args.layout_file, header = None, sep = ',', dtype = np.float64)
-        coordinate = np.asarray(coordinate)
-        coordinate = coordinate[:,:2]
+        # coordinate = pd.read_csv(self.args.layout_file, header = None, sep = ',', dtype = np.float64)
+        # coordinate = np.asarray(coordinate)
+        # coordinate = coordinate[:,:2]
 
-        coordinate[:,0] = max(coordinate[:,0]) - coordinate[:,0]
-        coordinate[:,1] -= min(coordinate[:,1])
-        coordinate = np.round(np.asarray(coordinate/0.1625/(0.90*2048))).astype(int)
+        # coordinate[:,0] = max(coordinate[:,0]) - coordinate[:,0]
+        # coordinate[:,1] -= min(coordinate[:,1])
+        # coordinate = np.round(np.asarray(coordinate/0.1625/(0.90*2048))).astype(int)
+
+        coordinate = self.retrieve_coordinate()
 
         code = 0
         num_row = len(set(coordinate[:,1]))
@@ -1150,15 +531,16 @@ class ExSeq():
 
         # -------Each FOV-------
         for fov in self.args.fovs:
-            show_fov(args,fov)
+            show_fov(fov, code,z)
 
         # -------All FOVs-------
         fig,axs = plt.subplots(num_row,num_col,figsize = (3*num_col,3*num_row))
         for fov,(col,row) in enumerate(coordinate):
-            img_name = self.args.work_path + 'max_projection/fov_{}_405.png'.format(fov)
+            img_name = self.args.work_path + 'max_projection/fov_{}_405_z={}.png'.format(fov,z)
             if os.path.exists(img_name):
                 img = plt.imread(img_name)
                 axs[row,col].imshow(img)
+
 
         for row in range(num_row):
             for col in range(num_col):
@@ -1166,12 +548,11 @@ class ExSeq():
                 axs[row,col].get_yaxis().set_visible(False)
                 axs[row,col].axis('off')
         plt.tight_layout()     
-        plt.savefig(self.args.work_path + 'max_projection/all_405.png')
+        plt.savefig(self.args.work_path + 'max_projection/all_405_z={}.png'.format(z))
+        print('The stitched image is saved at:', self.args.work_path + 'max_projection/all_405_z={}.png'.format(z))
     
     
     
-    #########################################################
-    #########################################################
     ### ============== Help set the threshold================
     def inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax = 600):
         
@@ -1185,11 +566,8 @@ class ExSeq():
                 ,zmax = 600)
         '''
         
-        with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-            img = f[self.args.channel_names[c]][ROI_min[0],ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]]
-        gaussian_filter(img, 1, output=img, mode='reflect', cval=0)
-        fig = px.imshow(img,zmax = zmax)
-        fig.show()
+        inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax = 600)
+        
 
     ### ============== Help set the threshold================
     def inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax = 600):
@@ -1203,13 +581,8 @@ class ExSeq():
                 ,ROI_max=
                 ,vmax = 600)
         '''
-
-        fig,ax = plt.subplots(1,1)
+        inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax = 600)
         
-        with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-            img = f[self.args.channel_names[c]][ROI_min[0],ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]]
-        ax.imshow(img, vmax = vmax)
-        plt.show()
         
     ###============== Help set the threshold================
     def inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax = 600):
@@ -1229,11 +602,8 @@ class ExSeq():
                 img = f[self.args.channel_names[c]][ROI_min[0],ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]]
                 ax[c].imshow(img, vmax = vmax)
         plt.show()
-    
-    
-    
-    ######################################################### 
-    #########################################################
+
+
     ### ============= Inspection Per Channel =======================
     def inspect_localmaximum_plotly(self, fov, code, c, ROI_min, ROI_max):
         
@@ -2043,7 +1413,7 @@ class ExSeq():
         # fig.show()
         fig.write_html(html_name)
 
-    ######################################################### 
+
     ######################################################### 
     ### ======== Unused ============
     def transform_405_single_ref_adjacent(self,code,fov,ref_code,ref_fov):
@@ -2084,7 +1454,11 @@ class ExSeq():
             except:
                 print('failed')
     
-        os.system('chmod -R 777 {}'.format(self.args.out_path))
+        try:
+            os.system('chmod -R 777 {}'.format(self.args.work_path))
+            os.system('chmod -R 777 {}'.format(self.args.out_path))
+        except:
+            pass
         
     def transform_405(self,fov_code_pairs):
         
@@ -2128,8 +1502,12 @@ class ExSeq():
                 except:
                     print('failed')
 
-            os.system('chmod -R 777 {}'.format(self.args.out_path))
-            
+            try:
+                os.system('chmod -R 777 {}'.format(self.args.work_path))
+                os.system('chmod -R 777 {}'.format(self.args.out_path))
+            except:
+                pass
+
         for fov,code in fov_code_pairs:
             self.transform_405_single(code,fov)
             
@@ -2163,7 +1541,11 @@ class ExSeq():
                         del f[channel]
                     f.create_dataset(channel, result.shape, compression="gzip", dtype=result.dtype, data = result)
                     
-        os.system('chmod -R 777 {}'.format(self.args.out_path))    
+        try:
+            os.system('chmod -R 777 {}'.format(self.args.work_path))
+            os.system('chmod -R 777 {}'.format(self.args.out_path))
+        except:
+            pass
 
     def transform_others(self,fov_code_pairs):
         

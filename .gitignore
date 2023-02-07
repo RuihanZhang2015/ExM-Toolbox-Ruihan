@@ -5,6 +5,7 @@ Simple*
 *.pyc
 ruihan/*
 *.log
+ruihan_january/*
 ruihan_november/*
 ruihan_september/*
 ruihan_october/*
