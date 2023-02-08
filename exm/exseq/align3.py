@@ -94,6 +94,10 @@ def transform_405_truncated(self,code_fov_pairs):
             f.create_dataset('405', out.shape, dtype=out.dtype, data = out)
 
 
+
+# def transform_405_truncated_mask(self,code_fov_pairs):
+
+
 def transform_405_full(self,code_fov_pairs):
     
     ref_code = self.args.ref_code
@@ -220,7 +224,8 @@ def transform_others_function(self,tasks_queue,q_lock):
     os.system("curl -X POST -H \'Content-type: application/json\' --data \'{\"text\":\"full resolution fov7 code 1 finished!\"}\' https://hooks.slack.com/services/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")
 
 
-def transform_others_full(self,fov_code_pairs,num_cpu=8):
+
+def transform_others_full(self,itfov_code_pairs,num_cpu=8):
         
     os.environ["OMP_NUM_THREADS"] = "1"
 
