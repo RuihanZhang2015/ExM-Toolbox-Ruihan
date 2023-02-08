@@ -95,20 +95,20 @@ class ExSeq():
        
     
     ### =============== Align =====================
-    def transform_405_lowres(self,fov_code_pairs):
-        from exm.exseq.align2 import transform_405_lowres
-        transform_405_lowres(self,fov_code_pairs)
+    def transform_405_truncated(self,fov_code_pairs):
+        from exm.exseq.align3 import transform_405_truncated
+        transform_405_truncated(self,fov_code_pairs)
         
-    def transform_405_highres(self,fov_code_pairs):
-        from exm.exseq.align2 import transform_405_highres
-        transform_405_highres(self,fov_code_pairs)
+    def transform_405_full(self,fov_code_pairs):
+        from exm.exseq.align3 import transform_405_full
+        transform_405_full(self,fov_code_pairs)
 
-    def transform_others_highres(self,fov_code_pairs):
-        from exm.exseq.align2 import transform_others_highres
-        transform_others_highres(self,fov_code_pairs)
+    def transform_others_full(self,fov_code_pairs,num_cpu):
+        from exm.exseq.align3 import transform_others_full
+        transform_others_full(self,fov_code_pairs,num_cpu)
 
     def inspect_alignment(self,fov_code_pairs,temp_dir):
-        from exm.exseq.align2 import inspect_alignment
+        from exm.exseq.align3 import inspect_alignment
         inspect_alignment(self,fov_code_pairs,temp_dir)
 
 
@@ -381,119 +381,6 @@ class ExSeq():
         else:
             return False
     
-  
-    ### =============== Check alignment==================
-    def inspect_alignment_singleFovCode(self, fov, code, ROI_min=[0,0,0], ROI_max= None,num_layer = 4,modified = False):
-        
-        '''
-        exseq.check_alignment(
-                fov = 
-                ,code = 
-                ,ROI_min =[0,0,0]
-                ,ROI_max =[100,2048,2048]
-                ,layers = 4
-                ,save = True
-                )
-        '''
-
-        if modified:
-            if ROI_max == None:
-                with h5py.File(self.args.out_dir + 'code{}/{}_downsampled.h5'.format(self.args.ref_code,fov), 'r+') as f:
-                    fix_vol = f['405'][:,0,0]
-                    ROI_max = [len(fix_vol),1024,1024]
-            
-            z_inds = np.linspace(ROI_min[0], ROI_max[0]-1, num_layer)
-            z_inds = [int(x) for x in z_inds]
-            
-            
-            fig, ax = plt.subplots(len(z_inds), 4, figsize = (20, 5*len(z_inds)))
-
-            with h5py.File(self.args.out_dir + 'code{}/{}_downsampled.h5'.format(self.args.ref_code,fov), 'r+') as f:
-                fix_vol = f['405']
-
-                with h5py.File(self.args.out_dir + 'code{}/{}_downsampled.h5'.format(code,fov), 'r+') as f:
-                    mov_vol = f['405']
-
-                    for row, z in enumerate(z_inds):
-                        ax[row,0].imshow(fix_vol[z,:,:])
-                        ax[row,0].set_title('code0 z = {}'.format(z))
-                        ax[row,1].imshow(mov_vol[z,:,:])
-                        ax[row,1].set_title('code{} z = {}'.format(code,z))
-
-                        ax[row,2].imshow(fix_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
-                        ax[row,2].set_title('code0 z = {}'.format(z))
-                        ax[row,3].imshow(mov_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
-                        ax[row,3].set_title('code{} z = {}'.format(code,z))
-
-        else:
-            if ROI_max == None:
-                with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'r+') as f:
-                    fix_vol = f['405'][:,0,0]
-                    ROI_max = [len(fix_vol),2048,2048]
-            
-            z_inds = np.linspace(ROI_min[0], ROI_max[0]-1, num_layer)
-            z_inds = [int(x) for x in z_inds]
-            
-            
-            fig, ax = plt.subplots(len(z_inds), 4, figsize = (20, 5*len(z_inds)))
-
-            with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'r+') as f:
-                fix_vol = f['405']
-
-                with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code,fov), 'r+') as f:
-                    mov_vol = f['405']
-
-                    for row, z in enumerate(z_inds):
-                        ax[row,0].imshow(fix_vol[z,:,:])
-                        ax[row,0].set_title('code0 z = {}'.format(z))
-                        ax[row,1].imshow(mov_vol[z,:,:])
-                        ax[row,1].set_title('code{} z = {}'.format(code,z))
-
-                        ax[row,2].imshow(fix_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
-                        ax[row,2].set_title('code0 z = {}'.format(z))
-                        ax[row,3].imshow(mov_vol[z,ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]])
-                        ax[row,3].set_title('code{} z = {}'.format(code,z))
-                
-        plt.show()
-    
-    def inspect_alignment_multiFovCode(self, fov_code_pairs, num_layer=4):
-        
-        '''
-        fov_code_pairs = [[fov,code] for fov in range(44) for code in [3] ]
-        exseq.inspect_alignment_fovs(fov_code_pairs,num_layer=5)
-        '''
-        
-        if not os.path.exists(self.args.out_dir + 'check_align/'):
-            os.mkdir(self.args.out_dir + 'check_align/')
-            
-        with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,0), 'r+') as f:
-                fix_vol = f['405'][:,0,0]
-
-        # z_inds = np.linspace(0, len(fix_vol)-1, num_layer)
-        z_inds = np.linspace(0, 199, num_layer)
-        z_inds = [int(x) for x in z_inds]
-        
-        def check_alignment_single(fov,code):
-            fig, ax = plt.subplots(len(z_inds), 2, figsize = (10, 5*len(z_inds)))
-
-            with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'r+') as f:
-                fix_vol = f['405']
-
-                with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code,fov), 'r+') as f:
-                    mov_vol = f['405']
-
-                    for row, z in enumerate(z_inds):
-                        ax[row,0].imshow(fix_vol[z,:,:])
-                        ax[row,0].set_title('code0 z = {}'.format(z))
-                        ax[row,1].imshow(mov_vol[z,:,:])
-                        ax[row,1].set_title('code{} z = {}'.format(code,z))
-
-            plt.savefig(self.args.out_dir + 'check_align/fov_{}_code_{}.jpg'.format(fov,code))
-            plt.close()
-            
-        for fov, code in tqdm(fov_code_pairs):
-            check_alignment_single(fov,code)
-            
 
     ### ================== Inspect Raw images =================
     def inspect_stitching(self,code,z):
@@ -552,56 +439,23 @@ class ExSeq():
         print('The stitched image is saved at:', self.args.work_path + 'max_projection/all_405_z={}.png'.format(z))
     
     
-    
     ### ============== Help set the threshold================
-    def inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax = 600):
-        
-        '''
-        exseq.inspect_raw_plotly(
-                fov=
-                ,code=
-                ,c=
-                ,ROI_min=
-                ,ROI_max=
-                ,zmax = 600)
-        '''
-        
-        inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax = 600)
+    def inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax=600):
+        from exm.exseq.inspect import inspect_raw_plotly
+        inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax)
         
 
     ### ============== Help set the threshold================
     def inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax = 600):
-        
-        '''
-        exseq.inspect_raw_matplotlib(
-                fov=
-                ,code=
-                ,c=
-                ,ROI_min=
-                ,ROI_max=
-                ,vmax = 600)
-        '''
+        from exm.exseq.inspect import inspect_raw_matplotlib
         inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax = 600)
         
         
     ###============== Help set the threshold================
     def inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax = 600):
-        
-        '''
-        exseq.inspect_rawFive_matplotlib(
-                fov=
-                ,code=
-                ,ROI_min=
-                ,ROI_max=
-                ,vmax = 600)
-        '''
-
-        fig,ax = plt.subplots(1,5,figsize = (20,5))
-        for c in range(5):
-            with h5py.File(self.args.h5_path.format(code,fov), "r") as f:
-                img = f[self.args.channel_names[c]][ROI_min[0],ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]]
-                ax[c].imshow(img, vmax = vmax)
-        plt.show()
+        from exm.exseq.inspect import inspect_raw_channels_matplotlib
+        inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax)
+       
 
 
     ### ============= Inspection Per Channel =======================

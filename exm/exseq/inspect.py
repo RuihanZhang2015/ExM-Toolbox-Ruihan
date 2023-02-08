@@ -58,8 +58,7 @@ def inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax = 600):
         plt.show()
 
 
-######################################################### 
-#########################################################
+
 ### ============= Inspection Per Channel =======================
 def inspect_localmaximum_plotly(self, fov, code, c, ROI_min, ROI_max):
         
@@ -131,10 +130,7 @@ def inspect_localmaximum_plotly(self, fov, code, c, ROI_min, ROI_max):
 
         fig.show()
 
-    
-    
-######################################################### 
-#########################################################
+
 ### ===============Inspect ROI ===================
 def inspect_ROI_matplotlib(self, fov, code, position, centered=40):
 
