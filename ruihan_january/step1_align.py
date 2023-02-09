@@ -1,3 +1,5 @@
+import os
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 from exm.exseq.args import Args
 from exm.exseq.exseq import ExSeq
 args = Args(
@@ -11,8 +13,8 @@ args = Args(
     fovs = None)
 exseq = ExSeq(args)
 
-fov_code_pairs = [[fov,code] for fov in [16] for code in [0,1,2,3,4,5,6]]
-# exseq.transform_405_acceleration(fov_code_pairs,num_cpu=1)
+fov_code_pairs = [[fov,code] for fov in [16] for code in [1,2,3,4,5,6]]
+# exseq.transform_405_acceleration(fov_code_pairs,num_cpu=1,downsample=False)
 # exseq.transform_others_acceleration(fov_code_pairs,num_cpu = 1)
 # exseq.inspect_alignment_multiFovCode(fov_code_pairs,num_layer=4)
 
