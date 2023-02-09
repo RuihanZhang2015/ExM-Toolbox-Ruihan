@@ -5,7 +5,10 @@ Simple*
 *.pyc
 ruihan/*
 *.log
-ruihan_january/*
+ruihan_january/alignment_full/*
+ruihan_january/alignment_result/*
+ruihan_january/for_alignment/*
+ruihan_january/.ipynb_checkpoints/*
 ruihan_november/*
 ruihan_september/*
 ruihan_october/*

@@ -94,7 +94,6 @@ def transform_405_truncated(self,code_fov_pairs):
             f.create_dataset('405', out.shape, dtype=out.dtype, data = out)
 
 
-
 # def transform_405_truncated_mask(self,code_fov_pairs):
 
 
