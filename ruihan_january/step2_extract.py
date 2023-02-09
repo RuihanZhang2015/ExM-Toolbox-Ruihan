@@ -14,5 +14,5 @@ exseq = ExSeq(args)
 
 
 fov_code_pairs = [[fov,code] for fov in range(30) for code in range(7)]
-exseq.extract(fov_code_pairs,use_gpu=False,num_cpu = 1)
+exseq.extract(fov_code_pairs,use_gpu=False,num_cpu = 6)
  

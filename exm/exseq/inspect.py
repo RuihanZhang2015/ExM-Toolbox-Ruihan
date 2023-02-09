@@ -1,7 +1,15 @@
 
+import matplotlib.pyplot as plt
+import h5py
+import plotly.graph_objects as go
+import plotly.express as px
+
 ### ============== Help set the threshold================
-def inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax = 600):
+def inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax):
         
+        from scipy.ndimage import gaussian_filter
+        from skimage.feature import peak_local_max
+
         '''
         exseq.inspect_raw_plotly(
                 fov=
@@ -19,8 +27,9 @@ def inspect_raw_plotly(self,fov,code,c,ROI_min,ROI_max,zmax = 600):
         fig.show()
 
 ### ============== Help set the threshold================
-def inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax = 600):
-        
+def inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax):
+
+
         '''
         exseq.inspect_raw_matplotlib(
                 fov=
@@ -39,7 +48,7 @@ def inspect_raw_matplotlib(self,fov,code,c,ROI_min,ROI_max,vmax = 600):
         plt.show()
         
 ###============== Help set the threshold================
-def inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax = 600):
+def inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax):
         
         '''
         exseq.inspect_rawFive_matplotlib(
@@ -56,7 +65,6 @@ def inspect_raw_channels_matplotlib(self,fov,code,ROI_min,ROI_max,vmax = 600):
                 img = f[self.args.channel_names[c]][ROI_min[0],ROI_min[1]:ROI_max[1],ROI_min[2]:ROI_max[2]]
                 ax[c].imshow(img, vmax = vmax)
         plt.show()
-
 
 
 ### ============= Inspection Per Channel =======================
@@ -263,7 +271,8 @@ def inspect_ROI_plotly(self, fov, ROI_min, ROI_max, codes, c_list=[0,1,2,3],cent
             ))
 
         fig.show()
-        
+
+
 ### ==========Inspect puncta matplotlib===================
 def inspect_puncta_matplotlib(self,fov,puncta_index, centered=40):
 
@@ -292,6 +301,7 @@ def inspect_puncta_matplotlib(self,fov,puncta_index, centered=40):
 
         fig.suptitle('fov{} puncta{}'.format(fov,puncta_index))    
         plt.show() 
+   
         
 ### ========== Inspect puncta plotly==============
 def inspect_puncta_plotly(self, fov, puncta_index,spacer = 40 ):

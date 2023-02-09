@@ -1,18 +1,13 @@
-import plotly.express as px
-import matplotlib.pyplot as plt
 import seaborn as sns
 from ..config.utils import load_cfg
-from ..align.build import alignBuild
+# from ..align.build import alignBuild
 from numbers_parser import Document
 from ..io.io import createFolderStruc
-from ..io.io import nd2ToVol
-from nd2reader import ND2Reader
-import plotly.graph_objects as go
-import plotly.express as px
-import time
-from exm.exseq.inspect import inspect_raw_plotly,inspect_raw_matplotlib
+# from ..io.io import nd2ToVol
+# from nd2reader import ND2Reader
 import collections
 import time
+import stat
 
 import os
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
@@ -59,8 +54,9 @@ class ExSeq():
                 os.makedirs(self.args.out_dir + 'code{}/tforms/'.format(code))
             
         try:
-            os.system('chmod -R 777 {}  >/dev/null 2>&1'.format(self.args.work_path))
-            os.system('chmod -R 777 {}  >/dev/null 2>&1'.format(self.args.out_path))
+            os.chmod(self.args.work_path,stat.S_IRWXO)
+            os.chmod(self.args.out_path,stat.S_IRWXO)
+    
         except:
             pass
        
