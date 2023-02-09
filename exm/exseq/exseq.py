@@ -6,6 +6,7 @@ from ..align.build import alignBuild
 from numbers_parser import Document
 from ..io.io import createFolderStruc
 from scipy.spatial.distance import cdist
+from scipy import ndimage
 from ..io.io import nd2ToVol
 from nd2reader import ND2Reader
 import plotly.graph_objects as go
@@ -147,13 +148,13 @@ class ExSeq():
     #########################################################
     #########################################################
     ### ======== align 405 ==================================  
-    def transform_405_acceleration(self,fov_code_pairs,num_cpu=None,modified= False):
+    def transform_405_acceleration(self,fov_code_pairs,num_cpu=None,modified= False,downsample=False):
         
         '''
         exseq.transform_405_acceleration(fov_code_pairs,num_cpu=2)
         '''
         
-        def align405_single_acceleration(tasks_queue,q_lock):
+        def align405_single_acceleration(tasks_queue,q_lock,file_lock):
     
             while True: # Check for remaining task in the Queue
 
@@ -167,21 +168,21 @@ class ExSeq():
 
                 else:
 
-                    if code == self.args.ref_code:
-
+                    if code == self.args.ref_code:          
+                        print("Code {} FOV {} Started on {}".format(code,fov,current_process().name))
                         fix_vol = nd2ToVol(self.args.fix_path, fov)
                         with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(self.args.ref_code,fov), 'w') as f:
                             f.create_dataset('405', fix_vol.shape, compression="gzip", dtype=fix_vol.dtype, data = fix_vol)
 
                     else:
-
                         print("Code {} FOV {} Started on {}".format(code,fov,current_process().name))
                         cfg = load_cfg()
                         align = alignBuild(cfg)
                         align.buildSitkTile()
 
-                        with h5py.File(self.args.h5_path.format(self.args.ref_code,fov), 'r+') as f:
-                            fix_vol = f['405'][:]
+                        with file_lock:
+                            with h5py.File(self.args.h5_path.format(self.args.ref_code,fov), 'r+') as f:
+                                fix_vol = f['405'][:]
 
                         mov_vol = nd2ToVol(self.args.mov_path.format(code,'405',4), fov)
                         z_nums = mov_vol.shape[0]
@@ -190,11 +191,33 @@ class ExSeq():
                             fix_vol = fix_vol[300:600,:,:]
                             mov_vol = mov_vol[300:600,:,:]
 
+                        if downsample:
+                            fix_vol_down = ndimage.zoom(fix_vol, 0.25, order= 1)
+                            mov_vol_down = ndimage.zoom(mov_vol, 0.25, order= 1)
                         # lazy exception due to SITK failing sometimes
                         try:
-                            tform = align.computeTransformMap(fix_vol, mov_vol)
+                            
+                            if downsample:
+                                tform = align.computeTransformMap(fix_vol_down, mov_vol_down)
+                                center_of_rotation = list(tform['CenterOfRotationPoint'])
+                                center_of_rotation[0] = str(float(center_of_rotation[0])*4.0)
+                                center_of_rotation[1] = str(float(center_of_rotation[1])*4.0)
+                                center_of_rotation[2] = str(float(center_of_rotation[2])*4.0)
+                                tform['CenterOfRotationPoint'] = tuple(center_of_rotation)
+
+                                tform['Size']= tuple([str(fix_vol.shape[2]),str(fix_vol.shape[1]),str(fix_vol.shape[0])])
+
+                                transform_parameter = list(tform['TransformParameters'])
+                                transform_parameter[3]= str(float(transform_parameter[3])*4.0)
+                                transform_parameter[4]= str(float(transform_parameter[4])*4.0)
+                                transform_parameter[5]= str(float(transform_parameter[5])*4.0)
+                                tform['TransformParameters'] = tuple(transform_parameter)
+                            
+                            else:
+                                tform = align.computeTransformMap(fix_vol, mov_vol)
+
                             result = align.warpVolume(mov_vol, tform)
-                            print(align.__dict__)
+                            # print(align.__dict__)  
 
                             with h5py.File(self.args.h5_path.format(code,fov), 'w') as f:
                                 f.create_dataset('405', result.shape, dtype=result.dtype, data = result)
@@ -226,6 +249,7 @@ class ExSeq():
         tasks_queue = Queue() 
         # Queue lock to avoid race condition.
         q_lock = multiprocessing.Lock()
+        file_lock = multiprocessing.Lock()
         # Get the extraction tasks starting time. 
         
         start_time = time.time()
@@ -238,7 +262,7 @@ class ExSeq():
             tasks_queue.put((fov,code))
 
         for w in range(int(cpu_execution_core)):
-            p = Process(target=align405_single_acceleration, args=(tasks_queue,q_lock))
+            p = Process(target=align405_single_acceleration, args=(tasks_queue,q_lock,file_lock))
             child_processes.append(p)
             p.start()
 
@@ -281,13 +305,13 @@ class ExSeq():
                             path = self.args.mov_path.format(code, channel, channel_ind)
 
                             result = nd2ToVol(path, fov, channel)
-                            total_results.append((channel,result))
+                            # total_results.append((channel,result))
 
-                        with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code, fov), 'r+') as f:
-                            for ch_results in total_results:
-                                if ch_results[0] in f.keys():
-                                    del f[ch_results[0]]
-                                f.create_dataset(ch_results[0], ch_results[1].shape, dtype=ch_results[1].dtype, data = ch_results[1])
+                            with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code, fov), 'r+') as f:
+                                # for ch_results in total_results:
+                                if channel in f.keys():
+                                    del f[channel]  
+                                f.create_dataset(channel, result.shape, dtype=result.dtype, data = result)
 
                         print("Code {} FOV {} on {} Done".format(self.args.ref_code,fov,current_process().name))
 
@@ -322,13 +346,13 @@ class ExSeq():
                                 # print(tform)
 
                             result = align.warpVolume(vol, tform)
-                            total_results.append((channel,result))
+                            # total_results.append((channel,result))
 
-                        with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code, fov), 'r+') as f:
-                            for ch_results in total_results:    
-                                if ch_results[0] in f.keys():
-                                    del f[ch_results[0]]
-                                f.create_dataset(ch_results[0], ch_results[1].shape, dtype=ch_results[1].dtype, data = ch_results[1])
+                            with h5py.File(self.args.out_dir + 'code{}/{}.h5'.format(code, fov), 'r+') as f:
+                                # for ch_results in total_results:    
+                                if channel in f.keys():
+                                    del f[channel]
+                                f.create_dataset(channel, result.shape, dtype=result.dtype, data = result)
 
                         print("Code {} FOV {} on {} Done".format(code,fov,current_process().name))
 
@@ -348,7 +372,6 @@ class ExSeq():
         # Queue lock to avoid race condition.
         q_lock = multiprocessing.Lock()
         # Get the extraction tasks starting time. 
-        
         start_time = time.time()
         # Clear the child processes list.
         child_processes = [] 
